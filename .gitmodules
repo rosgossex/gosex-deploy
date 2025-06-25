@@ -1,0 +1,6 @@
+[submodule "gosex-backend"]
+	path = gosex-backend
+	url = git@github.com:rosgossex/gosex-backend.git
+[submodule "gosex-esia"]
+	path = gosex-esia
+	url = git@github.com:rosgossex/gosex-esia.git
