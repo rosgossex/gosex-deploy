@@ -1,0 +1,3 @@
+include:
+  - ./gosex-backend/docker-compose.yml
+  - ./gosex-esia/docker-compose.yml
