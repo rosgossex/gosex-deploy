@@ -12,15 +12,17 @@ from urllib.parse import urljoin
 fake = Faker('ru_RU')
 
 KEYCLOAK_URL = "http://localhost:8080"
+BACKEND_URL = "http://localhost:6969"
 REALM = "gosex"
-CLIENT_ID = "admin-cli"
+ADMIN_CLIENT_ID = "admin-cli"
+USER_CLIENT_ID = "gosex-app"
 
 def get_admin_token(username="admin", password="admin"):
     """Get admin access token from Keycloak"""
     token_url = f"{KEYCLOAK_URL}/realms/master/protocol/openid-connect/token"
     
     data = {
-        "client_id": CLIENT_ID,
+        "client_id": ADMIN_CLIENT_ID,
         "username": username,
         "password": password,
         "grant_type": "password"
@@ -53,6 +55,39 @@ def create_user(token, user_data):
     except requests.exceptions.RequestException as e:
         print(f"Error creating user {user_data['username']}: {e}")
         return False
+
+def get_user_token(username, password):
+    """Get user access token from Keycloak"""
+    token_url = f"{KEYCLOAK_URL}/realms/{REALM}/protocol/openid-connect/token"
+    
+    data = {
+        "client_id": USER_CLIENT_ID,
+        "username": username,
+        "password": password,
+        "grant_type": "password"
+    }
+    
+    try:
+        response = requests.post(token_url, data=data)
+        if response.status_code == 200:
+            return response.json().get("access_token")
+        else:
+            return None
+    except requests.exceptions.RequestException:
+        return None
+
+def register_user_with_backend(access_token, username):
+    """Register/get user from backend using JWT token"""
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Content-Type": "application/json"
+    }
+    
+    try:
+        response = requests.post(f"{BACKEND_URL}/users/me", headers=headers)
+        return response.status_code, response.text
+    except requests.exceptions.RequestException as e:
+        return None, str(e)
 
 def generate_random_user():
     """Generate random user data"""
@@ -105,13 +140,48 @@ def main():
     print(f"Creating {num_users} random users...")
     
     created_count = 0
+    registered_count = 0
+    
     for i in range(num_users):
         user_data = generate_random_user()
+        username = user_data['username']
+        password = user_data['credentials'][0]['value']
+        
+        # Create user in Keycloak
         if create_user(token, user_data):
             created_count += 1
-            print(f"Created user: {user_data['username']} ({user_data['firstName']} {user_data['lastName']})")
+            print(f"✅ Created user: {username} ({user_data['firstName']} {user_data['lastName']})")
+            
+            # Get user token and register with backend
+            print(f"   Getting token for {username}...")
+            user_token = get_user_token(username, password)
+            
+            if user_token:
+                print(f"   Token obtained, registering with backend...")
+                status_code, response_text = register_user_with_backend(user_token, username)
+                
+                if status_code == 201:
+                    registered_count += 1
+                    try:
+                        user_data_backend = json.loads(response_text)
+                        print(f"   ✅ Registered in backend: {user_data_backend.get('fullName')} (ID: {user_data_backend.get('id')})")
+                    except:
+                        print(f"   ✅ Registered in backend (201)")
+                elif status_code == 200:
+                    registered_count += 1
+                    print(f"   ✅ Found existing user in backend (200)")
+                else:
+                    print(f"   ❌ Backend error ({status_code}): {response_text}")
+            else:
+                print(f"   ❌ Failed to get user token")
+        else:
+            print(f"❌ Failed to create user: {username}")
         
-    print(f"\nSuccessfully created {created_count}/{num_users} users in realm '{REALM}'")
+        print()  # Empty line between users
+        
+    print(f"Summary:")
+    print(f"  Users created in Keycloak: {created_count}/{num_users}")
+    print(f"  Users registered in backend: {registered_count}/{created_count}")
 
 if __name__ == "__main__":
     main()
